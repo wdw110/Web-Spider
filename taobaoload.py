@@ -5,6 +5,7 @@ import urllib
 import urllib2
 import cookielib
 import webbrowser
+import tool_taobao
 
 #模拟淘宝登录类
 class Taobao(object):
@@ -69,9 +70,17 @@ class Taobao(object):
 		self.cookie = cookielib.LWPCookieJar()  #设置cookie
 		self.cookieHandler = urllib2.HTTPCookieProcessor(self.cookie) #设置cookie处理器
 		self.opener = urllib2.build_opener(self.cookieHandler,self.proxy,urllib2.HTTPHandler)  #设置登录时用到的opener，它的open方法相当于urllib2.urlopen
+		#赋值J_HToken
+		self.J_HToken = ''
+		#登录成功时，需要的Cookie
+		self.newCookie = cookielib.CookieJar()
+		#登陆成功时，需要的一个新的opener
+		self.newOpener = urllib2.build_opener(urllib2.HTTPCookieProcessor(self.newCookie))
+		#引入工具类
+		self.tool = tool_taobao.Tool()
 
 	#得到是否需要输入验证码，这次请求的相应有时会不同，有时需要用验证码又是不需要
-	def needIdenCode(self):
+	def needCheckCode(self):
 		request = urllib2.Request(self.loginURL,self.postData,self.loginHeaders)  #第一次登录获取验证码尝试，构建request
 		response = self.opener.open(request)  #得到第一次登录尝试的相应
 		content = response.read().decode('gbk')  #获取其中的内容
@@ -91,7 +100,141 @@ class Taobao(object):
 		else:
 			print u'获取请求失败'
 
+	#得到验证码
+	def getCheckCode(self,page):
+		pattern = re.compile('<img id="J_StandardCode_m.*?data-src="(.*?)"',re.S) #得到验证码的图片
+		matchResult = re.search(pattern,page) #匹配的结果
+		if matchResult and matchResult.group(1): #已经匹配得到内容，并且验证码连接不为空
+			print matchResult.group(1)
+			return matchResult.group(1)
+		else:
+			print u'没有找到验证码内容'
+			return False
+
+	#输入验证码，重新请求，如果验证成功，则返回J_HToken
+	def loginWithCheckCode(self):
+		#提示用户输入验证码
+		checkcode = raw_input('请输入验证码:')
+		#将验证码重新添加到post的数据中
+		self.post['TPL_checkcode'] = checkcode
+		#对post数据重新进行编码
+		self.postData = urllib.urlencode(self.post)
+		try:
+			#再次构建请求，加入验证码之后的第二次登录尝试
+			request = urllib2.Request(self.loginURL,self.postData,self.loginHeaders)
+			#得到第一次登录尝试的相应
+			response = self.opener.open(request)
+			#获取其中的内容
+			content = response.read().decode('gbk')
+			#检测验证码错误的正则表达式，\u9a8c\u8bc1\u7801\u9519\u8bef 是验证码错误五个字的编码
+			pattern = re.compile(u'\u9a8c\u8bc1\u7801\u9519\u8bef',re.S)
+			result = re.search(pattern,content)
+			#如果返回页面包括了，验证码错误五个字
+			if result:
+				print u"验证码输入错误"
+				return False
+			else:
+				#返回结果直接带有J_HToken字样，说明验证码输入成功，成功跳转到了获取HToken的界面
+				tokenPattern = re.compile('id="J_HToken" value="(.*?)"')
+				tokenMatch = re.search(tokenPattern,content)
+				#如果匹配成功，找到了J_HToken
+				if tokenMatch:
+					print u"验证码输入正确"
+					self.J_HToken = tokenMatch.group(1)
+					return tokenMatch.group(1)
+				else:
+					#匹配失败，J_Token获取失败
+					print u"J_Token获取失败"
+					return False
+		except urllib2.HTTPError, e:
+			print u"连接服务器出错，错误原因",e.reason
+			return False
+
+	def getSTbyToken(self,token):
+		tokenURL = 'https://passport.alipay.com/mini_apply_st.js?site=0&token=%s&callback=stCallback6' % token
+		request = urllib2.Request(tokenURL)
+		response = urllib2.urlopen(request)
+		pettern = re.compile('{"st":"(.*?)"}',re.S) #处理st,获得用户淘宝主页登陆地址
+		result = re.search(pattern,response,read())
+		if result:
+			print u'成功获取st码'
+			st = result.group(1)
+			return st 
+		else:
+			print u'未匹配到st'
+			return False
+
+	#利用st码进行登录,获取重定向网址
+	def loginByST(self,st,username):
+		stURL = 'https://login.taobao.com/member/vst.htm?st=%s&TPL_username=%s' % (st,username)
+		headers = {
+			'User-Agent' : 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:35.0) Gecko/20100101 Firefox/35.0',
+			'Host':'login.taobao.com',
+			'Connection' : 'Keep-Alive'
+		}
+		request = urllib2.Request(stURL,headers = headers)
+		response = self.newOpener.open(request)
+		content =  response.read().decode('gbk')
+		#检测结果，看是否登录成功
+		pattern = re.compile('top.location = "(.*?)"',re.S)
+		match = re.search(pattern,content)
+		if match:
+			print u"登录网址成功"
+			location = match.group(1)
+			return True
+		else:
+			print "登录失败"
+			return False
+
+	#获取已买到的宝贝页面
+	def getGoodspage(self,pageIndex):
+		goodsURL = 'http://buyer.trade.taobao.com/trade/itemlist/listBoughtItems.htm?action=itemlist/QueryAction&event_submit_do_query=1&pageNum=' + str(pageIndex)
+		response = self.newOpener.open(goodsURL)
+		page = response.read().decode('gbk')
+		return page
+
+	#获取所有已买到的宝贝信息
+	def getAllGoods(self,pageNum):
+		print u"获取到的商品列表如下"
+		for x in range(1,int(pageNum)+1):
+			page = self.getGoodsPage(x)
+			self.tool.getGoodsInfo(page)
+
+	def main(self): #主程序代码
+		needResult = self.needCheckCode()
+		if not needResult == None:
+			if not needResult == False:
+				print u'你需要手动输入验证码'
+				idenCode = self.getCheckCode(needResult)
+				if not idenCode == False: #得到了验证码的链接
+					print u'验证码获取成功'
+					print u'请在浏览器中输入验证码'
+					webbrowser.open_new_tab(idenCode)
+					self.loginWithCheckCode()
+					#print 'J_HToken',J_HToken
+				else:
+					print u'验证码获取失败，请重试'
+			else:
+				print u'不需要输入验证码'
+		else:
+			print u'请求登录页面失败，无法确认是否需要验证码'
+
+		#判断token是否正常获取到
+		if not self.J_HToken:
+			print "获取Token失败，请重试"
+			return
+		#获取st码
+		st = self.getSTbyToken(self.J_HToken)
+		#利用st进行登录
+		result = self.loginByST(st,self.username)
+		if result:
+			#获得所有宝贝的页面
+			page = self.getGoodsPage(1)
+			pageNum = self.tool.getPageNum(page)
+			self.getAllGoods(pageNum)
+		else:
+			print u"登录失败"
 
 b = Taobao()
-b.needIdenCode()
+b.main()
 
