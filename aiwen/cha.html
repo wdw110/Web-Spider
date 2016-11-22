@@ -1,0 +1,15 @@
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="refresh" content = "5"> 
+    </head>
+    <body>
+		<?php 
+			$ph = popen('tail -n 100 out.log','r');
+			while($r = fgets($ph)){
+				echo $r."<br>";
+			}
+			pclose($ph);
+		?>
+	</body>
+</html>
