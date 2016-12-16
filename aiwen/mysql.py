@@ -11,7 +11,7 @@ class Mysql(object):
 
 	def __init__(self, arg):
 		try:
-			self.db = MySQLdb.connect('ip','username','password','db_name')
+			self.db = MySQLdb.connect('127.0.0.1','root','','test')
 			self.cur = self.db.cursor()
 		except MySQLdb.Error, e:
 			print self.getCurrentTime(),'连接数据库错误，原因%d：%s' %(e.args[0],e.args[1])
