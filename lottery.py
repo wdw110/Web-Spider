@@ -1,6 +1,7 @@
 #encoding=utf-8
 
 import re
+import sys
 import urllib
 import urllib2
 import requests
@@ -8,6 +9,12 @@ import numpy as np
 
 url = 'http://www.lottery.gov.cn/historykj/'
 types = ['dlt','qxc'] #彩票类型：大乐透，七星彩
+if len(sys.argv)>1:
+	lot_id = int(sys.argv[1])
+else:
+	print '请输入彩票类型！'
+	sys.exit()
+lot = types[lot_id]
 
 def getPage(pagNum,n,url):
 	url += 'history_%d.jspx?_ltype=%s' % (pagNum,types[n])
@@ -44,9 +51,10 @@ content = getPage(1,0,url)
 N = getPageNum(content)
 getTitle(content)
 
-with open('lottery.txt','w') as f1:
+filename = "lottery_%s.txt" % lot
+with open(filename,'w') as f1:
 	for i in range(1,N+1):
-		print '正在爬取第%d页...' i
+		print '正在爬取%s的数据的第%d页...' %(lot,i)
 		content = getPage(i,0,url)
 		data = getContent(content)
 		for j in range(len(data)):
