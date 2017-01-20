@@ -23,7 +23,7 @@ def getPage(pagNum,n,url):
 	while True:
 		try:
 			request = urllib2.Request(url)
-			response = urllib2.urlopen(request,timeout=1)
+			response = urllib2.urlopen(request,timeout=10)
 		except urllib2.URLError as e:
 			print '网络连接出现问题, 正在尝试再次请求!'
 		else:
@@ -59,7 +59,7 @@ content = getPage(1,lot_id,url)
 N = getPageNum(content)
 getTitle(content)
 
-filename = "lottery_%s.txt" % lot
+filename = "data/lottery_%s.txt" % lot
 with open(filename,'w') as f1:
 	for i in range(1,N+1):
 		print '正在爬取%s的数据的第%d页...' %(lot,i)
